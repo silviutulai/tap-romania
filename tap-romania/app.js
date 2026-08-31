@@ -1,103 +1,87 @@
-const map = L.map("map", {
-  zoomControl: true,
-  attributionControl: true,
-  doubleClickZoom: false,
-}).setView([45.94, 24.97], 6.4);
-
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "&copy; OpenStreetMap",
-  maxZoom: 12,
-  opacity: 0.35,
-}).addTo(map);
-
-let geoLayer = null;
+let svgRoot = null;
 let state = { scores: {}, total: 0 };
 let lastTapAt = 0;
+const TAP_COOLDOWN_MS = 40;
 
 function rankList() {
   return Object.keys(COUNTY_NAMES)
-    .map((id) => ({ id, name: COUNTY_NAMES[id], score: state.scores[id] || 0 }))
+    .map((id) => ({ id, name: COUNTY_NAMES[id], score: Number(state.scores?.[id] || 0) }))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "ro"));
 }
 
 function colorFor(score, max) {
-  if (!max) return "#1d2b45";
+  if (!max || !score) return "#edf4ff";
   const t = Math.min(1, score / max);
-  const r = Math.round(29 + t * 200);
-  const g = Math.round(43 + t * 80);
-  const b = Math.round(69 + t * 10);
-  return `rgb(${r},${g},${b})`;
+  const light = Math.round(93 - t * 35);
+  const sat = Math.round(68 + t * 20);
+  return `hsl(216 ${sat}% ${light}%)`;
 }
 
-function styleFeature(feature) {
-  const id = feature.properties["hc-key"];
-  const scores = Object.values(state.scores);
-  const max = scores.length ? Math.max(...scores) : 0;
-  return {
-    color: "#9eb6d8",
-    weight: 1,
-    fillColor: colorFor(state.scores[id] || 0, max),
-    fillOpacity: 0.82,
-  };
+function countyPaths() {
+  if (!svgRoot) return [];
+  return [...svgRoot.querySelectorAll("path[id]")].filter((path) => COUNTY_NAMES[path.id]);
 }
 
-function popupHtml(id) {
-  const ranked = rankList();
-  const pos = ranked.findIndex((x) => x.id === id) + 1;
-  const score = state.scores[id] || 0;
-  return `<div class="popup-title">${COUNTY_NAMES[id]}</div>
-    <div class="popup-meta">Tap-uri: <b>${score}</b> · Locul ${pos} / ${ranked.length}</div>
-    <div class="popup-meta">Apasă din nou pe județ ca să adaugi un tap.</div>`;
-}
-
-function onEachFeature(feature, layer) {
-  const id = feature.properties["hc-key"];
-  layer.bindPopup(() => popupHtml(id), { autoPan: false });
-  layer.on({
-    mouseover: (e) => e.target.setStyle({ weight: 2.5, color: "#f5c542" }),
-    mouseout: (e) => geoLayer.resetStyle(e.target),
-    click: () => tapCounty(id),
+function paintMap() {
+  if (!svgRoot) return;
+  const max = Math.max(0, ...Object.values(state.scores || {}).map(Number));
+  countyPaths().forEach((path) => {
+    const score = Number(state.scores?.[path.id] || 0);
+    path.style.fill = colorFor(score, max);
+    path.dataset.score = String(score);
   });
+  const b = document.getElementById("bucharestScore");
+  if (b) b.textContent = Number(state.scores?.["RO-B"] || 0).toLocaleString("ro-RO");
 }
 
 function renderSidebar() {
   const ranked = rankList();
-  document.getElementById("totalTaps").textContent = state.total.toLocaleString("ro-RO");
+  document.getElementById("totalTaps").textContent = Number(state.total || 0).toLocaleString("ro-RO");
   document.getElementById("liveCounties").textContent = ranked.filter((x) => x.score > 0).length;
-  const list = document.getElementById("list");
-  list.innerHTML = ranked
-    .map((item, i) => {
-      const cls = i === 0 ? "g1" : i === 1 ? "g2" : i === 2 ? "g3" : "";
-      return `<div class="row" data-id="${item.id}">
-        <div class="rank ${cls}">${i + 1}</div>
-        <div class="county">${item.name}<small>${item.id.replace("ro-", "").toUpperCase()}</small></div>
-        <div class="score">${item.score.toLocaleString("ro-RO")}</div>
-      </div>`;
-    })
-    .join("");
-  list.querySelectorAll(".row").forEach((row) => {
-    row.addEventListener("click", () => {
-      const id = row.dataset.id;
-      if (!geoLayer) return;
-      geoLayer.eachLayer((layer) => {
-        if (layer.feature.properties["hc-key"] === id) {
-          layer.openPopup();
-        }
-      });
-    });
-  });
+  document.getElementById("list").innerHTML = ranked.map((item, i) => {
+    const medal = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+    return `<div class="rank-row" data-id="${item.id}">
+      <div class="rank-number ${medal}">${i + 1}</div>
+      <div class="rank-county"><strong>${item.name}</strong><span>${item.id.replace("RO-", "")}</span></div>
+      <div class="rank-score">${item.score.toLocaleString("ro-RO")}</div>
+    </div>`;
+  }).join("");
 }
 
 function applyState(next) {
-  state = next;
-  if (geoLayer) geoLayer.setStyle(styleFeature);
+  state = next || state;
+  paintMap();
   renderSidebar();
 }
 
-async function tapCounty(id) {
-  const now = Date.now();
-  if (now - lastTapAt < 800) return;
+function flagBurst(x, y) {
+  const fx = document.createElement("div");
+  fx.className = "mini-flag-burst";
+  fx.style.left = `${x}px`;
+  fx.style.top = `${y}px`;
+  fx.innerHTML = `<div class="mini-flag"><span></span><span></span><span></span></div><i></i>`;
+  document.getElementById("tapEffects").appendChild(fx);
+  setTimeout(() => fx.remove(), 700);
+}
+
+function pulseCounty(id) {
+  const path = svgRoot?.querySelector(`path[id="${CSS.escape(id)}"]`);
+  if (!path) return;
+  path.classList.remove("tap-pulse");
+  void path.getBoundingClientRect();
+  path.classList.add("tap-pulse");
+  setTimeout(() => path.classList.remove("tap-pulse"), 360);
+}
+
+async function tapCounty(id, point) {
+  if (!COUNTY_NAMES[id]) return;
+  const now = performance.now();
+  if (now - lastTapAt < TAP_COOLDOWN_MS) return;
   lastTapAt = now;
+
+  if (point) flagBurst(point.x, point.y);
+  pulseCounty(id);
+
   try {
     const res = await fetch("/api/tap", {
       method: "POST",
@@ -105,27 +89,75 @@ async function tapCounty(id) {
       body: JSON.stringify({ county: id }),
     });
     const data = await res.json();
-    if (!res.ok) {
-      toast(data.error || "Nu s-a putut înregistra tap-ul.");
-      return;
-    }
+    if (!res.ok) return;
     applyState(data);
   } catch (err) {
-    toast("Eroare de rețea.");
+    console.error("Eroare la tap:", err);
   }
 }
 
-function toast(msg) {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
-  el.style.display = "block";
-  setTimeout(() => (el.style.display = "none"), 2400);
+function addCountyLabels() {
+  if (!svgRoot) return;
+  svgRoot.querySelector(".county-labels")?.remove();
+  const NS = "http://www.w3.org/2000/svg";
+  const group = document.createElementNS(NS, "g");
+  group.setAttribute("class", "county-labels");
+  group.setAttribute("aria-hidden", "true");
+
+  countyPaths().forEach((path) => {
+    const box = path.getBBox();
+    const text = document.createElementNS(NS, "text");
+    let x = box.x + box.width / 2;
+    let y = box.y + box.height / 2;
+    if (path.id === "RO-B") { x += 4; y += 5; }
+    if (path.id === "RO-IF") { x -= 7; y -= 5; }
+    const minSide = Math.min(box.width, box.height);
+    const size = minSide < 14 ? 6.5 : minSide < 22 ? 7.6 : 9.5;
+    text.setAttribute("x", x.toFixed(2));
+    text.setAttribute("y", y.toFixed(2));
+    text.setAttribute("font-size", String(size));
+    text.setAttribute("class", "county-code");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dominant-baseline", "middle");
+    text.textContent = path.id.replace("RO-", "");
+    group.appendChild(text);
+  });
+  svgRoot.appendChild(group);
+}
+
+function wireCountyTaps() {
+  countyPaths().forEach((path) => {
+    path.setAttribute("tabindex", "0");
+    path.setAttribute("role", "button");
+    path.setAttribute("aria-label", `${COUNTY_NAMES[path.id]} - adaugă un tap`);
+    path.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      tapCounty(path.id, { x: e.clientX, y: e.clientY });
+    });
+    path.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const r = path.getBoundingClientRect();
+        tapCounty(path.id, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      }
+    });
+  });
 }
 
 async function loadMap() {
-  const geo = await fetch("/romania-counties.geojson").then((r) => r.json());
-  geoLayer = L.geoJSON(geo, { style: styleFeature, onEachFeature }).addTo(map);
-  map.fitBounds(geoLayer.getBounds(), { padding: [16, 16] });
+  const res = await fetch("/romania.svg", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Nu pot încărca harta (${res.status})`);
+  document.getElementById("map").innerHTML = await res.text();
+  svgRoot = document.querySelector("#map svg");
+  if (!svgRoot) throw new Error("SVG invalid");
+  svgRoot.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svgRoot.removeAttribute("width");
+  svgRoot.removeAttribute("height");
+  svgRoot.setAttribute("role", "img");
+  svgRoot.setAttribute("aria-label", "Harta județelor României");
+  wireCountyTaps();
+  addCountyLabels();
 }
 
 function connectStream() {
@@ -134,16 +166,36 @@ function connectStream() {
     try { applyState(JSON.parse(ev.data)); } catch (_) {}
   };
   es.onerror = () => {
-    setTimeout(connectStream, 2500);
     es.close();
+    setTimeout(connectStream, 2000);
   };
 }
 
+function showWelcome() {
+  const w = document.getElementById("welcome");
+  requestAnimationFrame(() => w.classList.add("show"));
+  setTimeout(() => w.classList.add("leave"), 1900);
+  setTimeout(() => w.remove(), 2550);
+}
+
 async function boot() {
-  await loadMap();
-  const initial = await fetch("/api/state").then((r) => r.json());
-  applyState(initial);
-  connectStream();
+  showWelcome();
+  const b = document.getElementById("bucharestTap");
+  b.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    const r = b.getBoundingClientRect();
+    tapCounty("RO-B", { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  });
+
+  try {
+    await loadMap();
+    applyState(await fetch("/api/state", { cache: "no-store" }).then((r) => r.json()));
+    connectStream();
+  } catch (err) {
+    console.error(err);
+    document.getElementById("map").innerHTML = `<div class="map-error">Harta nu s-a putut încărca.</div>`;
+  }
 }
 
 boot();
