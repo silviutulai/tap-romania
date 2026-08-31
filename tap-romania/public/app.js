@@ -3,9 +3,10 @@ const map = L.map("map", {
   attributionControl: true,
 }).setView([45.94, 24.97], 6.4);
 
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
-  attribution: "&copy; OpenStreetMap, CARTO",
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap",
   maxZoom: 12,
+  opacity: 0.35,
 }).addTo(map);
 
 let geoLayer = null;
