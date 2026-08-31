@@ -26,12 +26,26 @@ COOKIE_NAME = "ttr_session"
 SESSION_TTL = 60 * 60 * 24 * 7
 
 COUNTY_IDS = {
-    "ro-ab", "ro-ar", "ro-ag", "ro-bc", "ro-bh", "ro-bn", "ro-bt", "ro-bv",
-    "ro-br", "ro-bi", "ro-bz", "ro-cl", "ro-cs", "ro-cj", "ro-ct", "ro-cv",
-    "ro-db", "ro-dj", "ro-gl", "ro-gr", "ro-gj", "ro-hr", "ro-hd", "ro-il",
-    "ro-is", "ro-if", "ro-mm", "ro-mh", "ro-ms", "ro-nt", "ro-ot", "ro-ph",
-    "ro-sm", "ro-sj", "ro-sb", "ro-sv", "ro-tr", "ro-tm", "ro-tl", "ro-vl",
-    "ro-vs", "ro-vn",
+    "RO-AB", "RO-AR", "RO-AG", "RO-BC", "RO-BH", "RO-BN", "RO-BT", "RO-BV",
+    "RO-BR", "RO-B", "RO-BZ", "RO-CL", "RO-CS", "RO-CJ", "RO-CT", "RO-CV",
+    "RO-DB", "RO-DJ", "RO-GL", "RO-GR", "RO-GJ", "RO-HR", "RO-HD", "RO-IL",
+    "RO-IS", "RO-IF", "RO-MM", "RO-MH", "RO-MS", "RO-NT", "RO-OT", "RO-PH",
+    "RO-SM", "RO-SJ", "RO-SB", "RO-SV", "RO-TR", "RO-TM", "RO-TL", "RO-VL",
+    "RO-VS", "RO-VN",
+}
+
+OLD_TO_NEW = {
+    "ro-ab": "RO-AB", "ro-ar": "RO-AR", "ro-ag": "RO-AG", "ro-bc": "RO-BC",
+    "ro-bh": "RO-BH", "ro-bn": "RO-BN", "ro-bt": "RO-BT", "ro-bv": "RO-BV",
+    "ro-br": "RO-BR", "ro-bi": "RO-B", "ro-bz": "RO-BZ", "ro-cl": "RO-CL",
+    "ro-cs": "RO-CS", "ro-cj": "RO-CJ", "ro-ct": "RO-CT", "ro-cv": "RO-CV",
+    "ro-db": "RO-DB", "ro-dj": "RO-DJ", "ro-gl": "RO-GL", "ro-gr": "RO-GR",
+    "ro-gj": "RO-GJ", "ro-hr": "RO-HR", "ro-hd": "RO-HD", "ro-il": "RO-IL",
+    "ro-is": "RO-IS", "ro-if": "RO-IF", "ro-mm": "RO-MM", "ro-mh": "RO-MH",
+    "ro-ms": "RO-MS", "ro-nt": "RO-NT", "ro-ot": "RO-OT", "ro-ph": "RO-PH",
+    "ro-sm": "RO-SM", "ro-sj": "RO-SJ", "ro-sb": "RO-SB", "ro-sv": "RO-SV",
+    "ro-tr": "RO-TR", "ro-tm": "RO-TM", "ro-tl": "RO-TL", "ro-vl": "RO-VL",
+    "ro-vs": "RO-VS", "ro-vn": "RO-VN",
 }
 
 lock = threading.Lock()
@@ -49,7 +63,12 @@ def load_state() -> dict:
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        scores = {cid: int(data.get("scores", {}).get(cid, 0)) for cid in COUNTY_IDS}
+        raw = data.get("scores", {})
+        scores = {cid: 0 for cid in COUNTY_IDS}
+        for key, val in raw.items():
+            dest = key if key in COUNTY_IDS else OLD_TO_NEW.get(key)
+            if dest:
+                scores[dest] = scores.get(dest, 0) + int(val)
         return {"scores": scores, "total": sum(scores.values()), "updated": int(time.time())}
     except Exception:
         return empty_state()
