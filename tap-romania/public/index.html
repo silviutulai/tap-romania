@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tap Tap România</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -18,12 +17,9 @@
         </div>
       </div>
     </header>
-
     <section class="map-wrap">
-      <div id="map"></div>
-      <div class="hint">Tap pe județ = +1 punct · clasamentul e live</div>
+      <div id="map" class="svg-map"></div>
     </section>
-
     <aside class="sidebar">
       <div class="side-head">
         <h2>Clasament județe</h2>
@@ -35,14 +31,11 @@
       </div>
       <div class="list" id="list"></div>
     </aside>
-
     <footer class="footer">
       <span>41 județe + București</span>
       <span>Telefon · tabletă · desktop</span>
     </footer>
   </div>
-  <div class="toast" id="toast"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/names.js"></script>
   <script src="/app.js"></script>
 </body>
