@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · Tap Tap România</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="admin-shell">
+    <div class="card" id="loginCard">
+      <h3>Autentificare admin</h3>
+      <p class="muted">Doar tu vezi pagina asta. Publicul are doar harta.</p>
+      <div class="field">
+        <label>Utilizator</label>
+        <input id="user" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Parolă</label>
+        <input id="pass" type="password" autocomplete="current-password" />
+      </div>
+      <button class="btn gold" id="loginBtn">Intră</button>
+    </div>
+
+    <div class="admin-app" id="adminApp" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <div class="flag"><span></span><span></span><span></span></div>
+          <div>
+            <h1>Panou admin</h1>
+            <p>Adaugi puncte manual, live pe hartă</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn ghost" href="/">Vezi harta publică</a>
+          <button class="btn" id="logoutBtn">Ieșire</button>
+        </div>
+      </header>
+
+      <section class="admin-grid">
+        <div class="card">
+          <h3>Adaugă puncte</h3>
+          <div class="field">
+            <label>Județ</label>
+            <select id="adminCounty"></select>
+          </div>
+          <div class="field">
+            <label>Puncte (și negative)</label>
+            <input id="adminPoints" type="number" value="10" />
+          </div>
+          <div class="quick">
+            <button class="btn" data-pts="1">+1</button>
+            <button class="btn" data-pts="10">+10</button>
+            <button class="btn" data-pts="50">+50</button>
+            <button class="btn" data-pts="100">+100</button>
+            <button class="btn" data-pts="-10">-10</button>
+          </div>
+          <button class="btn gold" id="addPoints">Adaugă</button>
+        </div>
+        <div class="card grow">
+          <h3>Clasament live</h3>
+          <div class="totals">
+            <div class="stat"><b id="totalTaps">0</b><span>tap-uri totale</span></div>
+            <div class="stat"><b id="liveCounties">0</b><span>județe pe tablă</span></div>
+          </div>
+          <div class="list" id="list"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="/names.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

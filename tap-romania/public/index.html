@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tap Tap România</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="flag"><span></span><span></span><span></span></div>
+        <div>
+          <h1>Tap Tap România</h1>
+          <p>Atinge județul tău. Clasamentul se actualizează live.</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="map-wrap">
+      <div id="map"></div>
+      <div class="hint">Tap pe județ = +1 punct · clasamentul e live</div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="side-head">
+        <h2>Clasament județe</h2>
+        <p>Actualizare în timp real</p>
+      </div>
+      <div class="totals">
+        <div class="stat"><b id="totalTaps">0</b><span>tap-uri totale</span></div>
+        <div class="stat"><b id="liveCounties">0</b><span>județe pe tablă</span></div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+
+    <footer class="footer">
+      <span>41 județe + București</span>
+      <span>Telefon · tabletă · desktop</span>
+    </footer>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/names.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

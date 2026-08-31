@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: tap-tap-romania
+    runtime: python
+    plan: free
+    buildCommand: "true"
+    startCommand: python3 server.py
+    envVars:
+      - key: ADMIN_USER
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
