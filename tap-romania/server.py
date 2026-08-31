@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Tap Tap România — public map + admin login + SSE."""
-
+"""Tap Tap România — public map + admin + live SSE."""
 from __future__ import annotations
 
 import hashlib
@@ -24,6 +23,7 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 SECRET = os.environ.get("SECRET_KEY", "schimba-cheia-in-productie")
 COOKIE_NAME = "ttr_session"
 SESSION_TTL = 60 * 60 * 24 * 7
+TAP_COOLDOWN_SECONDS = 0.040
 
 COUNTY_IDS = {
     "RO-AB", "RO-AR", "RO-AG", "RO-BC", "RO-BH", "RO-BN", "RO-BT", "RO-BV",
@@ -33,24 +33,14 @@ COUNTY_IDS = {
     "RO-SM", "RO-SJ", "RO-SB", "RO-SV", "RO-TR", "RO-TM", "RO-TL", "RO-VL",
     "RO-VS", "RO-VN",
 }
+OLD_TO_NEW = {k.lower(): k for k in COUNTY_IDS}
+OLD_TO_NEW["ro-bi"] = "RO-B"
 
-OLD_TO_NEW = {
-    "ro-ab": "RO-AB", "ro-ar": "RO-AR", "ro-ag": "RO-AG", "ro-bc": "RO-BC",
-    "ro-bh": "RO-BH", "ro-bn": "RO-BN", "ro-bt": "RO-BT", "ro-bv": "RO-BV",
-    "ro-br": "RO-BR", "ro-bi": "RO-B", "ro-bz": "RO-BZ", "ro-cl": "RO-CL",
-    "ro-cs": "RO-CS", "ro-cj": "RO-CJ", "ro-ct": "RO-CT", "ro-cv": "RO-CV",
-    "ro-db": "RO-DB", "ro-dj": "RO-DJ", "ro-gl": "RO-GL", "ro-gr": "RO-GR",
-    "ro-gj": "RO-GJ", "ro-hr": "RO-HR", "ro-hd": "RO-HD", "ro-il": "RO-IL",
-    "ro-is": "RO-IS", "ro-if": "RO-IF", "ro-mm": "RO-MM", "ro-mh": "RO-MH",
-    "ro-ms": "RO-MS", "ro-nt": "RO-NT", "ro-ot": "RO-OT", "ro-ph": "RO-PH",
-    "ro-sm": "RO-SM", "ro-sj": "RO-SJ", "ro-sb": "RO-SB", "ro-sv": "RO-SV",
-    "ro-tr": "RO-TR", "ro-tm": "RO-TM", "ro-tl": "RO-TL", "ro-vl": "RO-VL",
-    "ro-vs": "RO-VS", "ro-vn": "RO-VN",
-}
-
-lock = threading.Lock()
+state_lock = threading.Lock()
+subscribers_lock = threading.Lock()
 subscribers: list[queue.Queue] = []
 last_tap_by_ip: dict[str, float] = {}
+last_tap_lock = threading.Lock()
 
 
 def empty_state() -> dict:
@@ -66,9 +56,9 @@ def load_state() -> dict:
         raw = data.get("scores", {})
         scores = {cid: 0 for cid in COUNTY_IDS}
         for key, val in raw.items():
-            dest = key if key in COUNTY_IDS else OLD_TO_NEW.get(key)
+            dest = key if key in COUNTY_IDS else OLD_TO_NEW.get(str(key).lower())
             if dest:
-                scores[dest] = scores.get(dest, 0) + int(val)
+                scores[dest] += max(0, int(val))
         return {"scores": scores, "total": sum(scores.values()), "updated": int(time.time())}
     except Exception:
         return empty_state()
@@ -85,32 +75,63 @@ def save_state() -> None:
 
 
 def snapshot() -> dict:
-    return {"scores": dict(state["scores"]), "total": state["total"], "updated": state["updated"]}
+    with state_lock:
+        return {
+            "scores": dict(state["scores"]),
+            "total": int(state["total"]),
+            "updated": int(state["updated"]),
+        }
 
 
-def publish() -> None:
-    payload = json.dumps(snapshot(), ensure_ascii=False)
+def publish(payload: dict | None = None) -> None:
+    if payload is None:
+        payload = snapshot()
+    encoded = json.dumps(payload, ensure_ascii=False)
     dead = []
-    for q in list(subscribers):
+    with subscribers_lock:
+        current = list(subscribers)
+    for q in current:
         try:
-            q.put_nowait(payload)
+            q.put_nowait(encoded)
         except Exception:
             dead.append(q)
-    for q in dead:
-        if q in subscribers:
-            subscribers.remove(q)
+    if dead:
+        with subscribers_lock:
+            for q in dead:
+                if q in subscribers:
+                    subscribers.remove(q)
 
 
 def add_points(county: str, points: int) -> dict:
     if county not in COUNTY_IDS:
         raise ValueError("Județ invalid")
-    with lock:
+    with state_lock:
         state["scores"][county] = max(0, int(state["scores"].get(county, 0)) + int(points))
         state["total"] = sum(state["scores"].values())
         state["updated"] = int(time.time())
         save_state()
-        current = snapshot()
-    publish()
+        current = {
+            "scores": dict(state["scores"]),
+            "total": int(state["total"]),
+            "updated": int(state["updated"]),
+        }
+    publish(current)
+    return current
+
+
+def reset_state() -> dict:
+    global state
+    with state_lock:
+        state = empty_state()
+        save_state()
+        current = {
+            "scores": dict(state["scores"]),
+            "total": 0,
+            "updated": int(state["updated"]),
+        }
+    with last_tap_lock:
+        last_tap_by_ip.clear()
+    publish(current)
     return current
 
 
@@ -208,10 +229,7 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(200, snapshot())
             return
         if path == "/api/admin/me":
-            if self.is_admin():
-                self._json(200, {"ok": True, "user": ADMIN_USER})
-            else:
-                self._json(401, {"ok": False})
+            self._json(200, {"ok": True, "user": ADMIN_USER}) if self.is_admin() else self._json(401, {"ok": False})
             return
         if path == "/api/stream":
             self.send_response(200)
@@ -219,46 +237,47 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "keep-alive")
             self.end_headers()
-            q: queue.Queue = queue.Queue(maxsize=20)
-            subscribers.append(q)
+            q: queue.Queue = queue.Queue(maxsize=50)
+            with subscribers_lock:
+                subscribers.append(q)
             try:
-                self.wfile.write(f"data: {json.dumps(snapshot(), ensure_ascii=False)}\n\n".encode("utf-8"))
+                first = json.dumps(snapshot(), ensure_ascii=False)
+                self.wfile.write(f"data: {first}\n\n".encode("utf-8"))
                 self.wfile.flush()
                 while True:
                     try:
                         payload = q.get(timeout=20)
                         self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
-                        self.wfile.flush()
                     except queue.Empty:
                         self.wfile.write(b": ping\n\n")
-                        self.wfile.flush()
-            except BrokenPipeError:
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
                 pass
             finally:
-                if q in subscribers:
-                    subscribers.remove(q)
+                with subscribers_lock:
+                    if q in subscribers:
+                        subscribers.remove(q)
             return
         super().do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
-        ip = self.client_address[0]
         body = self._read_json()
 
         if path == "/api/tap":
             county = str(body.get("county", ""))
-            now = time.time()
-            last = last_tap_by_ip.get(ip, 0)
-            if now - last < 0.8:
-                self._json(429, {"error": "Prea rapid. Mai așteaptă o secundă."})
-                return
-            last_tap_by_ip[ip] = now
+            ip = self.client_address[0]
+            now = time.monotonic()
+            with last_tap_lock:
+                last = last_tap_by_ip.get(ip, 0.0)
+                if now - last < TAP_COOLDOWN_SECONDS:
+                    self._json(429, {"error": "Prea rapid."})
+                    return
+                last_tap_by_ip[ip] = now
             try:
-                current = add_points(county, 1)
+                self._json(200, add_points(county, 1))
             except ValueError as e:
                 self._json(400, {"error": str(e)})
-                return
-            self._json(200, current)
             return
 
         if path == "/api/admin/login":
@@ -289,11 +308,16 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(400, {"error": "Valoare prea mare."})
                 return
             try:
-                current = add_points(county, points)
+                self._json(200, add_points(county, points))
             except ValueError as e:
                 self._json(400, {"error": str(e)})
+            return
+
+        if path == "/api/admin/reset":
+            if not self.is_admin():
+                self._json(401, {"error": "Trebuie să fii autentificat."})
                 return
-            self._json(200, current)
+            self._json(200, reset_state())
             return
 
         self._json(404, {"error": "Not found"})
